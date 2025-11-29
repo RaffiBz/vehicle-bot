@@ -36,7 +36,7 @@ export async function handlePhoto(ctx) {
 
     default:
       await ctx.reply(
-        "🤔 I wasn't expecting an image right now. Use /start to begin a new session."
+        "🤔 Я не ожидал изображение прямо сейчас. Используйте /start чтобы начать заново."
       );
   }
 }
@@ -86,16 +86,21 @@ export async function handleColorSelection(ctx) {
     selectedColor: colorName,
   });
 
-  await ctx.answerCbQuery(`Selected: ${colorName}`);
+  await ctx.answerCbQuery(`Вы выбрали: ${colorName}`);
 
   // Ask about background
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback("📷 Send Background Image", "bg_send")],
-    [Markup.button.callback("⏭️ Skip (Keep Original)", "bg_skip")],
+    [Markup.button.callback("📷 Отправить фоновое изображение", "bg_send")],
+    [
+      Markup.button.callback(
+        "⏭️ Пропустить (оставить оригинальный фон)",
+        "bg_skip"
+      ),
+    ],
   ]);
 
   await ctx.reply(
-    `✅ Color selected: ${colorName}\n\n${MESSAGES.BACKGROUND_CHOICE}`,
+    `✅ Цвет выбран: ${colorName}\n\n${MESSAGES.BACKGROUND_CHOICE}`,
     keyboard
   );
 }
@@ -106,17 +111,21 @@ export async function handleBackgroundChoice(ctx) {
   const choice = ctx.callbackQuery.data;
 
   if (session.state !== STATES.AWAITING_BACKGROUND_CHOICE) {
-    await ctx.answerCbQuery("Session expired. Please /start again.");
+    await ctx.answerCbQuery(
+      "Сессия истекла. Пожалуйста, начните заново через /start."
+    );
     return;
   }
 
   if (choice === "bg_skip") {
-    await ctx.answerCbQuery("Skipping background");
+    await ctx.answerCbQuery("Фон пропущен");
     await startProcessing(ctx);
   } else if (choice === "bg_send") {
     updateSession(ctx.chat.id, { state: STATES.AWAITING_BACKGROUND_IMAGE });
-    await ctx.answerCbQuery("Send your background image");
-    await ctx.reply("📸 Please send the background image you want to use.");
+    await ctx.answerCbQuery("Отправьте фоновое изображение");
+    await ctx.reply(
+      "📸 Пожалуйста, отправьте фоновое изображение, которое хотите использовать."
+    );
   }
 }
 
@@ -152,18 +161,18 @@ async function startProcessing(ctx) {
     if (result.success && result.outputImage) {
       // Send the processed image back to user
       await ctx.replyWithPhoto(result.outputImage, {
-        caption: `✅ Here's your ${session.selectedColor} vehicle!${
-          session.backgroundImage ? " (with custom background)" : ""
+        caption: `✅ Вот ваш автомобиль цвета ${session.selectedColor}!${
+          session.backgroundImage ? " (с пользовательским фоном)" : ""
         }`,
       });
     } else {
       await ctx.reply(
-        "⚠️ Processing completed but no image was generated. Please try again."
+        "⚠️ Обработка завершена, но изображение не было создано. Попробуйте снова."
       );
     }
   } catch (error) {
     console.error("Processing error:", error);
-    await ctx.reply(MESSAGES.ERROR + "\n\nError: " + error.message);
+    await ctx.reply(MESSAGES.ERROR + "\n\nОшибка: " + error.message);
   }
 
   resetSession(ctx.chat.id);
