@@ -8,53 +8,55 @@ export const STATES = {
 };
 
 export const COLORS = [
-  "Red",
-  "Blue",
-  "Black",
-  "White",
-  "Silver",
-  "Green",
-  "Yellow",
-  "Orange",
-  "Purple",
-  "Pink",
+  "Красный",
+  "Синий",
+  "Черный",
+  "Белый",
+  "Серебристый",
+  "Зелёный",
+  "Жёлтый",
+  "Оранжевый",
+  "Фиолетовый",
+  "Розовый",
 ];
 
 export const MESSAGES = {
-  WELCOME: `🚗 Welcome to Vehicle Color Changer Bot!
+  WELCOME: `🚗 Добро пожаловать в бот изменения цвета автомобиля!
 
-Send me a photo of a vehicle and I'll help you:
-- Change its color
-- Optionally place it on a new background
+Отправьте мне фото автомобиля, и я помогу вам:
+- Изменить его цвет
+- При желании поместить его на новый фон
 
-Use /start to begin or /help for instructions.`,
+Используйте /start чтобы начать или /help для инструкции.`,
 
   SEND_VEHICLE:
-    "📸 Please send me a clear photo of the vehicle you want to modify.",
+    "📸 Пожалуйста, отправьте чёткое фото автомобиля, который вы хотите изменить.",
 
-  CHOOSE_COLOR: "🎨 Great photo! Now choose a color for your vehicle:",
+  CHOOSE_COLOR: "🎨 Отличное фото! Теперь выберите цвет для вашего автомобиля:",
 
-  BACKGROUND_CHOICE: `🖼️ Would you like to add a custom background?
+  BACKGROUND_CHOICE: `🖼️ Хотите добавить пользовательский фон?
 
-- Send me a background image, OR
-- Type "skip" to keep the original background`,
+- Отправьте изображение фона, ИЛИ
+- Напишите «skip», чтобы сохранить оригинальный фон`,
 
-  PROCESSING: "⏳ Processing your image... This may take 30-60 seconds.",
+  PROCESSING:
+    "⏳ Обрабатываю ваше изображение... Это может занять 30–60 секунд.",
 
-  ERROR: "❌ Something went wrong. Please try again with /start",
+  ERROR: "❌ Что-то пошло не так. Пожалуйста, попробуйте снова с /start",
 
-  INVALID_IMAGE: "⚠️ Please send a valid photo. Make sure it's an image file.",
+  INVALID_IMAGE:
+    "⚠️ Пожалуйста, отправьте корректное изображение. Убедитесь, что это фото.",
 
-  HELP: `🔧 How to use this bot:
+  HELP: `🔧 Как пользоваться ботом:
 
-1. Send /start to begin
-2. Upload a clear photo of a vehicle
-3. Select your desired color
-4. Optionally add a custom background
-5. Wait for the magic! ✨
+1. Отправьте /start чтобы начать
+2. Загрузите чёткое фото автомобиля
+3. Выберите желаемый цвет
+4. При желании добавьте пользовательский фон
+5. Подождите магии! ✨
 
-Tips:
-- Use clear, well-lit photos
-- Side or front angles work best
-- Higher resolution = better results`,
+Советы:
+- Используйте чёткие, хорошо освещённые фото
+- Лучше всего работают снимки сбоку или спереди
+- Чем выше разрешение, тем лучше результат`,
 };
