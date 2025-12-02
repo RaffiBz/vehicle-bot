@@ -1,33 +1,77 @@
+// ============================================
+// BOT.JS - Telegraf Bot Setup
+// Main bot configuration and handler registration
+// ============================================
+
 import { Telegraf } from "telegraf";
 import {
   handleStart,
   handleHelp,
   handlePhoto,
+  handleLanguageSelection,
   handleColorSelection,
-  handleBackgroundChoice,
+  handleTextureSelection,
+  handleConfirmation,
+  handleResultAction,
   handleText,
 } from "./handlers.js";
 
+/**
+ * Create and configure the Telegram bot
+ * @param {string} token - Bot token from BotFather
+ * @returns {Telegraf} Configured bot instance
+ */
 export function createBot(token) {
   const bot = new Telegraf(token);
 
-  // Commands
+  // ==========================================
+  // COMMANDS
+  // ==========================================
+
+  // /start - Begin the flow
   bot.start(handleStart);
+
+  // /help - Show instructions
   bot.help(handleHelp);
 
-  // Photo handler
+  // ==========================================
+  // PHOTO HANDLER
+  // Handles vehicle image uploads
+  // ==========================================
   bot.on("photo", handlePhoto);
 
-  // Callback queries (button clicks)
-  bot.action(/^color_/, handleColorSelection);
-  bot.action(/^bg_/, handleBackgroundChoice);
+  // ==========================================
+  // CALLBACK QUERIES (Button clicks)
+  // Pattern matching for different button types
+  // ==========================================
 
-  // Text messages
+  // Language selection: lang_ru, lang_am
+  bot.action(/^lang_/, handleLanguageSelection);
+
+  // Color selection: color_red, color_blue, etc.
+  bot.action(/^color_/, handleColorSelection);
+
+  // Texture selection: texture_gloss, texture_matte
+  bot.action(/^texture_/, handleTextureSelection);
+
+  // Confirmation: confirm_ok, confirm_restart
+  bot.action(/^confirm_/, handleConfirmation);
+
+  // Result actions: result_another, result_call
+  bot.action(/^result_/, handleResultAction);
+
+  // ==========================================
+  // TEXT MESSAGE HANDLER
+  // Catches any text that isn't a command
+  // ==========================================
   bot.on("text", handleText);
 
-  // Error handling
+  // ==========================================
+  // ERROR HANDLING
+  // Global error handler for the bot
+  // ==========================================
   bot.catch((err, ctx) => {
-    console.error("Bot error:", err);
+    console.error("❌ Bot error:", err);
     ctx.reply("❌ An error occurred. Please try again with /start");
   });
 

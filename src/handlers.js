@@ -1,50 +1,139 @@
-import { Markup } from "telegraf";
-import { STATES, COLORS, MESSAGES } from "./constants.js";
-import { getSession, updateSession, resetSession } from "./sessions.js";
-import { processVehicleImage } from "./n8n.js";
+// ============================================
+// HANDLERS.JS - Conversation Flow Handlers
+// Flow: Language → Photo → Color → Texture → Confirm → Process → Result
+// ============================================
 
-// Handle /start command
+import { Markup } from "telegraf";
+import {
+  STATES,
+  COLORS,
+  TEXTURES,
+  MESSAGES,
+  LANGUAGES,
+  CONTACT_PHONE,
+} from "./constants.js";
+import {
+  getSession,
+  updateSession,
+  resetSession,
+  hasExceededLimit,
+  incrementUsage,
+  getRemainingGenerations,
+  getLocalizedMessage,
+} from "./sessions.js";
+import { processVehicleImage } from "./n8n.js";
+import { addWatermark } from "./watermark.js";
+
+// ============================================
+// HELPERS
+// ============================================
+
+function msg(ctx, messageObj) {
+  return getLocalizedMessage(ctx.chat.id, messageObj);
+}
+
+function getColorName(ctx, colorKey) {
+  const session = getSession(ctx.chat.id);
+  const lang = session.language || LANGUAGES.RU;
+  const color = COLORS.find((c) => c.key === colorKey);
+  return color ? color[lang] : colorKey;
+}
+
+function getTextureName(ctx, textureKey) {
+  const session = getSession(ctx.chat.id);
+  const lang = session.language || LANGUAGES.RU;
+  const texture = TEXTURES.find((t) => t.key === textureKey);
+  return texture ? texture[lang] : textureKey;
+}
+
+// ============================================
+// /start COMMAND
+// ============================================
+
 export async function handleStart(ctx) {
   resetSession(ctx.chat.id);
-  updateSession(ctx.chat.id, { state: STATES.AWAITING_VEHICLE_IMAGE });
+  updateSession(ctx.chat.id, { state: STATES.AWAITING_LANGUAGE });
 
-  await ctx.reply(MESSAGES.WELCOME);
-  await ctx.reply(MESSAGES.SEND_VEHICLE);
+  const keyboard = Markup.inlineKeyboard([
+    [
+      Markup.button.callback(MESSAGES.BTN_LANG_RU, "lang_ru"),
+      Markup.button.callback(MESSAGES.BTN_LANG_AM, "lang_am"),
+    ],
+  ]);
+
+  await ctx.reply(MESSAGES.WELCOME, keyboard);
 }
 
-// Handle /help command
+// ============================================
+// /help COMMAND
+// ============================================
+
 export async function handleHelp(ctx) {
-  await ctx.reply(MESSAGES.HELP);
+  await ctx.reply(msg(ctx, MESSAGES.HELP));
 }
 
-// Handle incoming photos
+// ============================================
+// LANGUAGE SELECTION
+// ============================================
+
+export async function handleLanguageSelection(ctx) {
+  const session = getSession(ctx.chat.id);
+
+  if (session.state !== STATES.AWAITING_LANGUAGE) {
+    await ctx.answerCbQuery(msg(ctx, MESSAGES.SESSION_EXPIRED));
+    return;
+  }
+
+  const language = ctx.callbackQuery.data.replace("lang_", "");
+
+  if (language !== LANGUAGES.RU && language !== LANGUAGES.AM) {
+    await ctx.answerCbQuery("Invalid language");
+    return;
+  }
+
+  // Check limit before continuing
+  if (hasExceededLimit(ctx.chat.id)) {
+    updateSession(ctx.chat.id, { language });
+    await ctx.answerCbQuery("⚠️");
+    await ctx.reply(msg(ctx, MESSAGES.LIMIT_EXCEEDED));
+    return;
+  }
+
+  updateSession(ctx.chat.id, {
+    language,
+    state: STATES.AWAITING_VEHICLE_IMAGE,
+  });
+
+  const langName = language === LANGUAGES.RU ? "Русский" : "Armenian";
+  await ctx.answerCbQuery(`✅ ${langName}`);
+  await ctx.reply(msg(ctx, MESSAGES.SEND_VEHICLE));
+}
+
+// ============================================
+// PHOTO HANDLER
+// ============================================
+
 export async function handlePhoto(ctx) {
   const session = getSession(ctx.chat.id);
   const photo = ctx.message.photo;
-
-  // Get the highest resolution photo
   const fileId = photo[photo.length - 1].file_id;
 
-  switch (session.state) {
-    case STATES.AWAITING_VEHICLE_IMAGE:
-      await handleVehicleImage(ctx, fileId);
-      break;
-
-    case STATES.AWAITING_BACKGROUND_IMAGE:
-      await handleBackgroundImage(ctx, fileId);
-      break;
-
-    default:
-      await ctx.reply(
-        "🤔 Я не ожидал изображение прямо сейчас. Используйте /start чтобы начать заново."
-      );
+  if (session.state === STATES.AWAITING_VEHICLE_IMAGE) {
+    await handleVehicleImage(ctx, fileId);
+  } else {
+    await ctx.reply(msg(ctx, MESSAGES.UNEXPECTED_IMAGE));
   }
 }
 
-// Process vehicle image
 async function handleVehicleImage(ctx, fileId) {
-  // Get the file URL from Telegram
+  if (hasExceededLimit(ctx.chat.id)) {
+    await ctx.reply(msg(ctx, MESSAGES.LIMIT_EXCEEDED));
+    return;
+  }
+
   const fileLink = await ctx.telegram.getFileLink(fileId);
+  const session = getSession(ctx.chat.id);
+  const lang = session.language || LANGUAGES.RU;
 
   updateSession(ctx.chat.id, {
     state: STATES.AWAITING_COLOR,
@@ -52,12 +141,12 @@ async function handleVehicleImage(ctx, fileId) {
     vehicleFileId: fileId,
   });
 
-  // Create color selection keyboard
+  // Color buttons in user's language
   const colorButtons = COLORS.map((color) =>
-    Markup.button.callback(color, `color_${color.toLowerCase()}`)
+    Markup.button.callback(color[lang], `color_${color.key}`)
   );
 
-  // Arrange in rows of 3
+  // 3 buttons per row
   const keyboard = Markup.inlineKeyboard(
     colorButtons.reduce((rows, button, index) => {
       if (index % 3 === 0) rows.push([]);
@@ -66,134 +155,226 @@ async function handleVehicleImage(ctx, fileId) {
     }, [])
   );
 
-  await ctx.reply(MESSAGES.CHOOSE_COLOR, keyboard);
+  await ctx.reply(msg(ctx, MESSAGES.CHOOSE_COLOR), keyboard);
 }
 
-// Handle color selection
+// ============================================
+// COLOR SELECTION
+// ============================================
+
 export async function handleColorSelection(ctx) {
   const session = getSession(ctx.chat.id);
 
   if (session.state !== STATES.AWAITING_COLOR) {
-    await ctx.answerCbQuery("Session expired. Please /start again.");
+    await ctx.answerCbQuery(msg(ctx, MESSAGES.SESSION_EXPIRED));
     return;
   }
 
-  const color = ctx.callbackQuery.data.replace("color_", "");
-  const colorName = color.charAt(0).toUpperCase() + color.slice(1);
+  const colorKey = ctx.callbackQuery.data.replace("color_", "");
+  const colorDisplay = getColorName(ctx, colorKey);
 
   updateSession(ctx.chat.id, {
-    state: STATES.AWAITING_BACKGROUND_CHOICE,
-    selectedColor: colorName,
+    state: STATES.AWAITING_TEXTURE,
+    selectedColor: colorKey,
+    selectedColorDisplay: colorDisplay,
   });
 
-  await ctx.answerCbQuery(`Вы выбрали: ${colorName}`);
+  await ctx.answerCbQuery(`✅ ${colorDisplay}`);
 
-  // Ask about background
+  // Texture buttons
+  const lang = session.language || LANGUAGES.RU;
+  const textureButtons = TEXTURES.map((texture) =>
+    Markup.button.callback(texture[lang], `texture_${texture.key}`)
+  );
+
+  const keyboard = Markup.inlineKeyboard([textureButtons]);
+  await ctx.reply(msg(ctx, MESSAGES.CHOOSE_TEXTURE), keyboard);
+}
+
+// ============================================
+// TEXTURE SELECTION
+// ============================================
+
+export async function handleTextureSelection(ctx) {
+  const session = getSession(ctx.chat.id);
+
+  if (session.state !== STATES.AWAITING_TEXTURE) {
+    await ctx.answerCbQuery(msg(ctx, MESSAGES.SESSION_EXPIRED));
+    return;
+  }
+
+  const textureKey = ctx.callbackQuery.data.replace("texture_", "");
+  const textureDisplay = getTextureName(ctx, textureKey);
+
+  updateSession(ctx.chat.id, {
+    state: STATES.AWAITING_CONFIRMATION,
+    selectedTexture: textureKey,
+    selectedTextureDisplay: textureDisplay,
+  });
+
+  await ctx.answerCbQuery(`✅ ${textureDisplay}`);
+
+  // Confirmation message with color + texture
+  const confirmMsg = msg(ctx, MESSAGES.SELECTION_CONFIRM)
+    .replace("{color}", session.selectedColorDisplay)
+    .replace("{texture}", textureDisplay);
+
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback("📷 Отправить фоновое изображение", "bg_send")],
     [
+      Markup.button.callback(msg(ctx, MESSAGES.BTN_CONFIRM_OK), "confirm_ok"),
       Markup.button.callback(
-        "⏭️ Пропустить (оставить оригинальный фон)",
-        "bg_skip"
+        msg(ctx, MESSAGES.BTN_CONFIRM_RESTART),
+        "confirm_restart"
       ),
     ],
   ]);
 
-  await ctx.reply(
-    `✅ Цвет выбран: ${colorName}\n\n${MESSAGES.BACKGROUND_CHOICE}`,
-    keyboard
-  );
+  await ctx.reply(confirmMsg, keyboard);
 }
 
-// Handle background choice
-export async function handleBackgroundChoice(ctx) {
-  const session = getSession(ctx.chat.id);
-  const choice = ctx.callbackQuery.data;
+// ============================================
+// CONFIRMATION
+// ============================================
 
-  if (session.state !== STATES.AWAITING_BACKGROUND_CHOICE) {
-    await ctx.answerCbQuery(
-      "Сессия истекла. Пожалуйста, начните заново через /start."
-    );
+export async function handleConfirmation(ctx) {
+  const session = getSession(ctx.chat.id);
+
+  if (session.state !== STATES.AWAITING_CONFIRMATION) {
+    await ctx.answerCbQuery(msg(ctx, MESSAGES.SESSION_EXPIRED));
     return;
   }
 
-  if (choice === "bg_skip") {
-    await ctx.answerCbQuery("Фон пропущен");
+  const choice = ctx.callbackQuery.data;
+
+  if (choice === "confirm_restart") {
+    await ctx.answerCbQuery("↩️");
+    resetSession(ctx.chat.id);
+    updateSession(ctx.chat.id, {
+      language: session.language,
+      state: STATES.AWAITING_VEHICLE_IMAGE,
+    });
+    await ctx.reply(msg(ctx, MESSAGES.SEND_VEHICLE));
+  } else if (choice === "confirm_ok") {
+    await ctx.answerCbQuery("👍");
     await startProcessing(ctx);
-  } else if (choice === "bg_send") {
-    updateSession(ctx.chat.id, { state: STATES.AWAITING_BACKGROUND_IMAGE });
-    await ctx.answerCbQuery("Отправьте фоновое изображение");
-    await ctx.reply(
-      "📸 Пожалуйста, отправьте фоновое изображение, которое хотите использовать."
-    );
   }
 }
 
-// Process background image
-async function handleBackgroundImage(ctx, fileId) {
-  const fileLink = await ctx.telegram.getFileLink(fileId);
+// ============================================
+// PROCESSING
+// ============================================
 
-  updateSession(ctx.chat.id, {
-    backgroundImage: fileLink.href,
-    backgroundFileId: fileId,
-  });
-
-  await startProcessing(ctx);
-}
-
-// Start the image processing
 async function startProcessing(ctx) {
   const session = getSession(ctx.chat.id);
 
-  updateSession(ctx.chat.id, { state: STATES.PROCESSING });
+  if (hasExceededLimit(ctx.chat.id)) {
+    await ctx.reply(msg(ctx, MESSAGES.LIMIT_EXCEEDED));
+    return;
+  }
 
-  await ctx.reply(MESSAGES.PROCESSING);
+  updateSession(ctx.chat.id, { state: STATES.PROCESSING });
+  await ctx.reply(msg(ctx, MESSAGES.PROCESSING));
 
   try {
-    // Call n8n webhook
     const result = await processVehicleImage({
       chatId: ctx.chat.id,
       vehicleImage: session.vehicleImage,
       selectedColor: session.selectedColor,
-      backgroundImage: session.backgroundImage,
+      selectedTexture: session.selectedTexture,
     });
 
     if (result.success && result.outputImage) {
-      // Send the processed image back to user
-      await ctx.replyWithPhoto(result.outputImage, {
-        caption: `✅ Вот ваш автомобиль цвета ${session.selectedColor}!${
-          session.backgroundImage ? " (с пользовательским фоном)" : ""
-        }`,
+      incrementUsage(ctx.chat.id);
+      updateSession(ctx.chat.id, { state: STATES.COMPLETED });
+
+      // Add watermark to the image
+      let imageToSend;
+      try {
+        const watermarkedBuffer = await addWatermark(result.outputImage);
+        imageToSend = { source: watermarkedBuffer };
+      } catch (watermarkError) {
+        console.error(
+          "Watermark error, using original:",
+          watermarkError.message
+        );
+        imageToSend = result.outputImage; // Fallback to original if watermark fails
+      }
+
+      const keyboard = Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            msg(ctx, MESSAGES.BTN_ANOTHER_COLOR),
+            "result_another"
+          ),
+        ],
+        [Markup.button.callback(msg(ctx, MESSAGES.BTN_CALL_US), "result_call")],
+      ]);
+
+      await ctx.replyWithPhoto(imageToSend, {
+        caption: msg(ctx, MESSAGES.RESULT_CAPTION),
+        ...keyboard,
       });
+
+      // Warn if running low on generations
+      const remaining = getRemainingGenerations(ctx.chat.id);
+      if (remaining <= 3 && remaining > 0) {
+        const warning =
+          session.language === LANGUAGES.AM
+            ? `ℹ️ Այսօր մնացածը՝ ${remaining}`
+            : `ℹ️ Осталось сегодня: ${remaining}`;
+        await ctx.reply(warning);
+      }
     } else {
-      await ctx.reply(
-        "⚠️ Обработка завершена, но изображение не было создано. Попробуйте снова."
-      );
+      await ctx.reply(msg(ctx, MESSAGES.ERROR));
+      resetSession(ctx.chat.id);
     }
   } catch (error) {
     console.error("Processing error:", error);
-    await ctx.reply(MESSAGES.ERROR + "\n\nОшибка: " + error.message);
+    await ctx.reply(msg(ctx, MESSAGES.ERROR) + "\n\n" + error.message);
+    resetSession(ctx.chat.id);
   }
-
-  resetSession(ctx.chat.id);
 }
 
-// Handle text messages
+// ============================================
+// RESULT ACTIONS
+// ============================================
+
+export async function handleResultAction(ctx) {
+  const session = getSession(ctx.chat.id);
+  const action = ctx.callbackQuery.data;
+
+  if (action === "result_another") {
+    await ctx.answerCbQuery("🎨");
+
+    if (hasExceededLimit(ctx.chat.id)) {
+      await ctx.reply(msg(ctx, MESSAGES.LIMIT_EXCEEDED));
+      return;
+    }
+
+    const language = session.language;
+    resetSession(ctx.chat.id);
+    updateSession(ctx.chat.id, {
+      language,
+      state: STATES.AWAITING_VEHICLE_IMAGE,
+    });
+
+    await ctx.reply(msg(ctx, MESSAGES.SEND_VEHICLE));
+  } else if (action === "result_call") {
+    await ctx.answerCbQuery("📞");
+    await ctx.reply(`📞 ${CONTACT_PHONE}`);
+  }
+}
+
+// ============================================
+// TEXT HANDLER
+// ============================================
+
 export async function handleText(ctx) {
   const session = getSession(ctx.chat.id);
-  const text = ctx.message.text.toLowerCase();
 
-  if (session.state === STATES.AWAITING_BACKGROUND_CHOICE && text === "skip") {
-    await startProcessing(ctx);
-    return;
-  }
-
-  // Default response for unexpected text
-  if (session.state === STATES.IDLE) {
-    await ctx.reply("👋 Hi! Use /start to begin transforming your vehicle.");
+  if (session.state === STATES.IDLE || !session.language) {
+    await ctx.reply("👋 Use /start to begin / Используйте /start");
   } else {
-    await ctx.reply(
-      "🤔 I'm expecting an image or a button selection. Need help? Use /help"
-    );
+    await ctx.reply(msg(ctx, MESSAGES.UNEXPECTED_TEXT));
   }
 }
