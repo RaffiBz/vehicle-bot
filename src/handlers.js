@@ -146,10 +146,10 @@ async function handleVehicleImage(ctx, fileId) {
     Markup.button.callback(color[lang], `color_${color.key}`)
   );
 
-  // 3 buttons per row
+  // 2 buttons per row
   const keyboard = Markup.inlineKeyboard(
     colorButtons.reduce((rows, button, index) => {
-      if (index % 3 === 0) rows.push([]);
+      if (index % 2 === 0) rows.push([]);
       rows[rows.length - 1].push(button);
       return rows;
     }, [])
@@ -207,57 +207,13 @@ export async function handleTextureSelection(ctx) {
   const textureDisplay = getTextureName(ctx, textureKey);
 
   updateSession(ctx.chat.id, {
-    state: STATES.AWAITING_CONFIRMATION,
     selectedTexture: textureKey,
     selectedTextureDisplay: textureDisplay,
   });
 
   await ctx.answerCbQuery(`✅ ${textureDisplay}`);
 
-  // Confirmation message with color + texture
-  const confirmMsg = msg(ctx, MESSAGES.SELECTION_CONFIRM)
-    .replace("{color}", session.selectedColorDisplay)
-    .replace("{texture}", textureDisplay);
-
-  const keyboard = Markup.inlineKeyboard([
-    [
-      Markup.button.callback(msg(ctx, MESSAGES.BTN_CONFIRM_OK), "confirm_ok"),
-      Markup.button.callback(
-        msg(ctx, MESSAGES.BTN_CONFIRM_RESTART),
-        "confirm_restart"
-      ),
-    ],
-  ]);
-
-  await ctx.reply(confirmMsg, keyboard);
-}
-
-// ============================================
-// CONFIRMATION
-// ============================================
-
-export async function handleConfirmation(ctx) {
-  const session = getSession(ctx.chat.id);
-
-  if (session.state !== STATES.AWAITING_CONFIRMATION) {
-    await ctx.answerCbQuery(msg(ctx, MESSAGES.SESSION_EXPIRED));
-    return;
-  }
-
-  const choice = ctx.callbackQuery.data;
-
-  if (choice === "confirm_restart") {
-    await ctx.answerCbQuery("↩️");
-    resetSession(ctx.chat.id);
-    updateSession(ctx.chat.id, {
-      language: session.language,
-      state: STATES.AWAITING_VEHICLE_IMAGE,
-    });
-    await ctx.reply(msg(ctx, MESSAGES.SEND_VEHICLE));
-  } else if (choice === "confirm_ok") {
-    await ctx.answerCbQuery("👍");
-    await startProcessing(ctx);
-  }
+  await startProcessing(ctx);
 }
 
 // ============================================

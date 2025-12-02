@@ -11,7 +11,6 @@ import {
   handleLanguageSelection,
   handleColorSelection,
   handleTextureSelection,
-  handleConfirmation,
   handleResultAction,
   handleText,
 } from "./handlers.js";
@@ -53,9 +52,6 @@ export function createBot(token) {
 
   // Texture selection: texture_gloss, texture_matte
   bot.action(/^texture_/, handleTextureSelection);
-
-  // Confirmation: confirm_ok, confirm_restart
-  bot.action(/^confirm_/, handleConfirmation);
 
   // Result actions: result_another, result_call
   bot.action(/^result_/, handleResultAction);
