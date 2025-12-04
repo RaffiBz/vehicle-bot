@@ -67,8 +67,16 @@ export function createBot(token) {
   // Global error handler for the bot
   // ==========================================
   bot.catch((err, ctx) => {
-    console.error("❌ Bot error:", err);
-    ctx.reply("❌ An error occurred. Please try again with /start");
+    // Log full error to terminal only
+    console.error("❌ Bot error:", err.message);
+
+    // Don't send error messages for callback query timeouts
+    if (err.message?.includes("query is too old")) {
+      return;
+    }
+
+    // Don't spam user with errors - just log
+    // Individual handlers already send clean error messages
   });
 
   return bot;

@@ -1,5 +1,6 @@
 // ============================================
 // WATERMARK.JS - Add tiled "Dave Wrap" watermark to images
+// Optimized for low memory usage
 // ============================================
 
 import sharp from "sharp";
@@ -11,11 +12,14 @@ import axios from "axios";
  * @returns {Promise<Buffer>} - Watermarked image buffer
  */
 export async function addWatermark(imageUrl) {
-  // Download the image
-  const response = await axios.get(imageUrl, { responseType: "arraybuffer" });
+  // Download the image with timeout
+  const response = await axios.get(imageUrl, {
+    responseType: "arraybuffer",
+    timeout: 30000, // 30 second timeout
+  });
   const imageBuffer = Buffer.from(response.data);
 
-  // Get image dimensions
+  // Get image dimensions (don't load full image into memory yet)
   const metadata = await sharp(imageBuffer).metadata();
   const width = metadata.width || 1024;
   const height = metadata.height || 768;
@@ -30,9 +34,7 @@ export async function addWatermark(imageUrl) {
   let row = 0;
 
   for (let y = 100; y < height; y += spacingY) {
-    // Alternate row offset
     const offsetX = row % 2 === 0 ? 0 : spacingX / 2;
-
     for (let x = 50 + offsetX; x < width; x += spacingX) {
       watermarkTexts += `<text x="${x}" y="${y}" text-anchor="middle" transform="rotate(${angle}, ${x}, ${y})">Dave Wrap</text>\n`;
     }
@@ -51,8 +53,10 @@ export async function addWatermark(imageUrl) {
   ${watermarkTexts}
 </svg>`;
 
-  // Composite watermark onto image
-  const watermarkedImage = await sharp(imageBuffer)
+  // Process with memory optimizations
+  const watermarkedImage = await sharp(imageBuffer, {
+    sequentialRead: true, // Lower memory usage - reads in chunks
+  })
     .composite([
       {
         input: Buffer.from(svgWatermark),
@@ -60,8 +64,11 @@ export async function addWatermark(imageUrl) {
         left: 0,
       },
     ])
-    .png()
+    .jpeg({ quality: 85 }) // JPEG is smaller than PNG, faster to send
     .toBuffer();
+
+  // Help garbage collection
+  imageBuffer.fill(0);
 
   return watermarkedImage;
 }
